@@ -61,6 +61,46 @@ def logistic_cp_loss_grad(Y, U, V, W, bias, lam):
     return loss, grad_U, grad_V, grad_W, grad_bias
 
 
+def logistic_cp_loss_grad_confidence(Y, C, U, V, W, bias, lam):
+    """
+    Logistic CP loss and gradients with confidence weights.
+    
+    Parameters:
+        Y: binary tensor (n x m x p)
+        C: confidence weights tensor (n x m x p)
+        U, V, W: factor matrices (n x R, m x R, p x R)
+        bias: scalar
+        lam: L2 regularization weight
+
+    Returns:
+        loss, grad_U, grad_V, grad_W, grad_bias
+    """
+    n, m, p = Y.shape
+    R = U.shape[1]
+
+    # Compute Theta = sum_r U[:,r] ⊗ V[:,r] ⊗ W[:,r] + bias
+    Theta = np.einsum('ir,jr,kr->ijk', U, V, W) + bias
+
+    # P = sigmoid(Theta)
+    P = sigmoid(Theta)
+
+    # Compute confidence-weighted logistic loss
+    logexp = np.log1p(np.exp(Theta))  # log(1 + exp(Theta))
+    loss = np.sum(C * (logexp - Y * Theta))
+    loss += lam * (np.sum(U**2) + np.sum(V**2) + np.sum(W**2))
+
+    # Compute residuals: C * (P - Y)
+    E = C * (P - Y)  # shape (n,m,p)
+
+    # Gradients using einsum (more efficient and readable)
+    grad_U = np.einsum('ijk,jr,kr->ir', E, V, W) + 2 * lam * U
+    grad_V = np.einsum('ijk,ir,kr->jr', E, U, W) + 2 * lam * V
+    grad_W = np.einsum('ijk,ir,jr->kr', E, U, V) + 2 * lam * W
+    grad_bias = np.sum(E)
+
+    return loss, grad_U, grad_V, grad_W, grad_bias
+    
+
 n, m, p = (3, 4, 5)   # dimensions (users x items x contexts)
 R = 2               # chosen rank
 # Create random ground-truth factors and bias, then generate Y
